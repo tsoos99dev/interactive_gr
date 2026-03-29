@@ -6,6 +6,7 @@ import path from "path";
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/interactive_gr/",
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),
