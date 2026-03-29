@@ -3,8 +3,14 @@ import { type Chart, atlas, pickChart } from "@/lib/charts";
 
 export interface SelectedPoint {
   position: [number, number, number];
+  /** Normalized basis vector ∂/∂u */
   e1: [number, number, number];
+  /** Normalized basis vector ∂/∂v */
   e2: [number, number, number];
+  /** Unnormalized pushforward ∂φ⁻¹/∂u — needed to reconstruct tangent from chart components */
+  e1Raw: [number, number, number];
+  /** Unnormalized pushforward ∂φ⁻¹/∂v */
+  e2Raw: [number, number, number];
   normal: [number, number, number];
 }
 
@@ -27,6 +33,8 @@ export interface AppState {
   /** Components (a, b) of selected tangent vector v = a·e₁ + b·e₂ */
   tangentVector: [number, number] | null;
   showCurve: boolean;
+  /** Reparameterization scale: t → paramScale·t, so γ'(0) scales by this factor */
+  paramScale: number;
 }
 
 export const initialState: AppState = {
@@ -41,6 +49,7 @@ export const initialState: AppState = {
   currentChart: atlas[0],
   tangentVector: null,
   showCurve: false,
+  paramScale: 1.0,
 };
 
 export type AppAction =
@@ -53,7 +62,8 @@ export type AppAction =
   | { type: "TOGGLE_SCALAR_OVERLAY" }
   | { type: "TOGGLE_TANGENT_MODE" }
   | { type: "SET_TANGENT_VECTOR"; v: [number, number] | null }
-  | { type: "TOGGLE_CURVE" };
+  | { type: "TOGGLE_CURVE" }
+  | { type: "SET_PARAM_SCALE"; scale: number };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -94,6 +104,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, tangentSpaceMode: !state.tangentSpaceMode };
     case "TOGGLE_CURVE":
       return { ...state, showCurve: !state.showCurve };
+    case "SET_PARAM_SCALE":
+      return { ...state, paramScale: action.scale };
   }
 }
 

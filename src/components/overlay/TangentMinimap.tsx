@@ -26,7 +26,9 @@ export function TangentMinimap() {
 
     // f₁ = e₁ / |e₁| (already normalized, but be safe)
     const e1Len = Math.sqrt(e1x * e1x + e1y * e1y + e1z * e1z);
-    const f1x = e1x / e1Len, f1y = e1y / e1Len, f1z = e1z / e1Len;
+    const f1x = e1x / e1Len,
+      f1y = e1y / e1Len,
+      f1z = e1z / e1Len;
 
     // f₂ = e₂ - (e₂·f₁)f₁, then normalize
     const dot = e2x * f1x + e2y * f1y + e2z * f1z;
@@ -34,7 +36,9 @@ export function TangentMinimap() {
     let f2y = e2y - dot * f1y;
     let f2z = e2z - dot * f1z;
     const f2Len = Math.sqrt(f2x * f2x + f2y * f2y + f2z * f2z);
-    f2x /= f2Len; f2y /= f2Len; f2z /= f2Len;
+    f2x /= f2Len;
+    f2y /= f2Len;
+    f2z /= f2Len;
 
     // Project e₁ and e₂ into (f1, f2) frame
     const e1_2d: [number, number] = [
@@ -46,14 +50,26 @@ export function TangentMinimap() {
       e2x * f2x + e2y * f2y + e2z * f2z,
     ];
 
-    return { e1_2d, e2_2d, f1: [f1x, f1y, f1z] as const, f2: [f2x, f2y, f2z] as const };
+    return {
+      e1_2d,
+      e2_2d,
+      f1: [f1x, f1y, f1z] as const,
+      f2: [f2x, f2y, f2z] as const,
+    };
   }, [point]);
 
-  const curveTangent3D = useMemo(() => {
+  const curveData = useMemo(() => {
     if (!state.showCurve || !point) return null;
-    const curve = generateCurve(point.position[0], point.position[2]);
-    return curve.tangent3D;
-  }, [state.showCurve, point]);
+    const chart = state.currentChart ?? undefined;
+    const curve = generateCurve(
+      point.position[0],
+      point.position[2],
+      chart ? { forward: chart.forward } : undefined,
+      point.e1Raw,
+      point.e2Raw,
+    );
+    return curve;
+  }, [state.showCurve, point, state.currentChart]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -69,13 +85,14 @@ export function TangentMinimap() {
     const cx = SIZE / 2;
     const cy = SIZE / 2;
 
-    // Project curve tangent γ'(0) into the 2D frame
+    // Project curve tangent γ'(0) into the 2D frame, scaled by parameterization
     let curveTangent2d: [number, number] | null = null;
-    if (state.showCurve && curveTangent3D) {
-      const [tx, ty, tz] = curveTangent3D;
+    if (state.showCurve && curveData) {
+      const s = curveData.tangentMagnitude * state.paramScale;
+      const [tx, ty, tz] = curveData.tangent3D;
       curveTangent2d = [
-        tx * f1[0] + ty * f1[1] + tz * f1[2],
-        tx * f2[0] + ty * f2[1] + tz * f2[2],
+        s * (tx * f1[0] + ty * f1[1] + tz * f1[2]),
+        s * (tx * f2[0] + ty * f2[1] + tz * f2[2]),
       ];
     }
     const toSx = (x: number) => cx + x * scale;
@@ -126,10 +143,22 @@ export function TangentMinimap() {
 
     // Draw curve tangent γ'(0) (black)
     if (state.showCurve && curveTangent2d) {
-      drawArrow(ctx, cx, cy, toSx(curveTangent2d[0]), toSy(curveTangent2d[1]), "#000000", 2);
+      drawArrow(
+        ctx,
+        cx,
+        cy,
+        toSx(curveTangent2d[0]),
+        toSy(curveTangent2d[1]),
+        "#000000",
+        2,
+      );
       ctx.fillStyle = "#000";
       ctx.font = "bold 10px monospace";
-      ctx.fillText("γ′(0)", toSx(curveTangent2d[0]) + 4, toSy(curveTangent2d[1]) - 4);
+      ctx.fillText(
+        "γ′(0)",
+        toSx(curveTangent2d[0]) + 4,
+        toSy(curveTangent2d[1]) - 4,
+      );
     }
 
     // Draw selected tangent vector (green)
@@ -144,7 +173,7 @@ export function TangentMinimap() {
       ctx.fillText(
         `v = ${a.toFixed(1)}·∂/∂u + ${b.toFixed(1)}·∂/∂v`,
         6,
-        SIZE - 18
+        SIZE - 18,
       );
     }
 
@@ -152,14 +181,16 @@ export function TangentMinimap() {
     if (state.showCurve && curveTangent2d) {
       const det2 = e1_2d[0] * e2_2d[1] - e1_2d[1] * e2_2d[0];
       if (Math.abs(det2) > 1e-6) {
-        const ca = (curveTangent2d[0] * e2_2d[1] - curveTangent2d[1] * e2_2d[0]) / det2;
-        const cb = (curveTangent2d[1] * e1_2d[0] - curveTangent2d[0] * e1_2d[1]) / det2;
+        const ca =
+          (curveTangent2d[0] * e2_2d[1] - curveTangent2d[1] * e2_2d[0]) / det2;
+        const cb =
+          (curveTangent2d[1] * e1_2d[0] - curveTangent2d[0] * e1_2d[1]) / det2;
         ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
         ctx.font = "10px monospace";
         ctx.fillText(
           `γ′ = ${ca.toFixed(1)}·∂/∂u + ${cb.toFixed(1)}·∂/∂v`,
           6,
-          SIZE - 6
+          SIZE - 6,
         );
       }
     }
@@ -179,7 +210,7 @@ export function TangentMinimap() {
     ctx.fillStyle = "rgba(60, 70, 90, 0.8)";
     ctx.font = "bold 11px monospace";
     ctx.fillText("TₚM", 6, 14);
-  }, [point, state.tangentVector, state.showCurve, curveTangent3D, getFrame]);
+  }, [point, state.tangentVector, state.showCurve, state.paramScale, curveData, getFrame]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -211,7 +242,7 @@ export function TangentMinimap() {
 
       dispatch({ type: "SET_TANGENT_VECTOR", v: [a, b] });
     },
-    [point, getFrame, dispatch]
+    [point, getFrame, dispatch],
   );
 
   if (!point) return null;
@@ -221,7 +252,7 @@ export function TangentMinimap() {
       ref={canvasRef}
       width={SIZE}
       height={SIZE}
-      className="absolute top-62 right-4 rounded-lg pointer-events-auto cursor-crosshair"
+      className="absolute top-58 right-4 rounded-lg pointer-events-auto cursor-crosshair"
       onClick={handleClick}
     />
   );
@@ -234,7 +265,7 @@ function drawArrow(
   x1: number,
   y1: number,
   color: string,
-  lineWidth: number
+  lineWidth: number,
 ) {
   const dx = x1 - x0;
   const dy = y1 - y0;
@@ -256,11 +287,11 @@ function drawArrow(
   ctx.moveTo(x1, y1);
   ctx.lineTo(
     x1 - headLen * Math.cos(angle - 0.35),
-    y1 - headLen * Math.sin(angle - 0.35)
+    y1 - headLen * Math.sin(angle - 0.35),
   );
   ctx.lineTo(
     x1 - headLen * Math.cos(angle + 0.35),
-    y1 - headLen * Math.sin(angle + 0.35)
+    y1 - headLen * Math.sin(angle + 0.35),
   );
   ctx.closePath();
   ctx.fill();

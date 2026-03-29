@@ -95,6 +95,26 @@ export function Toolbar() {
           </div>
         </div>
 
+        {/* Parameterization scale slider — visible when curve is shown */}
+        {state.showCurve && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Param. scale <span className="font-mono">{state.paramScale.toFixed(2)}&#x202F;t</span>
+            </Label>
+            <input
+              type="range"
+              min={0.5}
+              max={4}
+              step={0.05}
+              value={state.paramScale}
+              onChange={(e) =>
+                dispatch({ type: "SET_PARAM_SCALE", scale: parseFloat(e.target.value) })
+              }
+              className="w-full h-1.5 accent-foreground cursor-pointer"
+            />
+          </div>
+        )}
+
         <Button
           variant="outline"
           size="sm"

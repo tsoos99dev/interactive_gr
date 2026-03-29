@@ -8,9 +8,10 @@ import { useAppDispatch } from "@/stores/app-store";
 
 const MOVE_SPEED = 20;
 const ROTATE_SPEED = 1.8;
-const HEIGHT_OFFSET = 4;
+const HEIGHT_OFFSET = 12;
 const LERP_FACTOR = 0.08;
-const LOOK_AHEAD = 8;
+const LERP_FACTOR_Y = 0.04;
+const LOOK_AHEAD = 5;
 
 export function CameraRig() {
   const keys = useKeyboard();
@@ -21,6 +22,7 @@ export function CameraRig() {
   const yaw = useRef(0);
   const posX = useRef(0);
   const posZ = useRef(0);
+  const smoothLookY = useRef(0);
   const frameCount = useRef(0);
 
   useFrame((_, delta) => {
@@ -68,26 +70,30 @@ export function CameraRig() {
     camera.position.x = THREE.MathUtils.lerp(
       camera.position.x,
       posX.current,
-      LERP_FACTOR
+      LERP_FACTOR,
     );
     camera.position.y = THREE.MathUtils.lerp(
       camera.position.y,
       targetY,
-      LERP_FACTOR
+      LERP_FACTOR_Y,
     );
     camera.position.z = THREE.MathUtils.lerp(
       camera.position.z,
       posZ.current,
-      LERP_FACTOR
+      LERP_FACTOR,
     );
 
-    // Look ahead
+    // Look ahead (smooth the target height to reduce bobbing)
     const lookX = posX.current + dirX * LOOK_AHEAD;
     const lookZ = posZ.current + dirZ * LOOK_AHEAD;
-    const lookY =
-      terrainSampler.height(lookX, lookZ) + HEIGHT_OFFSET * 0.5;
+    const rawLookY = terrainSampler.height(lookX, lookZ) + HEIGHT_OFFSET * 0.5;
+    smoothLookY.current = THREE.MathUtils.lerp(
+      smoothLookY.current,
+      rawLookY,
+      LERP_FACTOR_Y,
+    );
 
-    camera.lookAt(lookX, lookY, lookZ);
+    camera.lookAt(lookX, smoothLookY.current, lookZ);
 
     // Update app state at reduced frequency (every 6 frames ~10fps at 60fps)
     frameCount.current++;

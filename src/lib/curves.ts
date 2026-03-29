@@ -48,17 +48,28 @@ export interface ManifoldCurve {
   points3D: [number, number, number][];
   /** 2D points on the (x,z) plane */
   pointsXZ: [number, number][];
-  /** Tangent vector γ'(0) at the selected point, in 3D embedding coords */
+  /** Unit-length tangent direction γ'(0) in 3D embedding coords */
   tangent3D: [number, number, number];
+  /** |γ'(0)| before normalization (in embedding-space units per parameter unit) */
+  tangentMagnitude: number;
+  /** Chart-coordinate components [du/dt, dv/dt] (null if no chart) */
+  tangentChart: [number, number] | null;
 }
 
 /**
  * Generate a curve passing through (x0, z0) on the manifold.
  * Integrates the vector field forward and backward.
+ *
+ * When a chart and its raw (unnormalized) basis vectors are provided,
+ * the tangent γ'(0) is computed as d(x^μ)/dt in chart coordinates,
+ * then reconstructed in the 3D embedding via the pushforward.
  */
 export function generateCurve(
   x0: number,
   z0: number,
+  chart?: { forward: (x: number, z: number) => [number, number] },
+  e1Raw?: [number, number, number],
+  e2Raw?: [number, number, number],
   steps = 150,
   dt = 0.2
 ): ManifoldCurve {
@@ -95,13 +106,37 @@ export function generateCurve(
   const mid = backwardXZ.length; // index of (x0, z0) in the combined array
   const ip = Math.min(mid + 1, pointsXZ.length - 1);
   const im = Math.max(mid - 1, 0);
-  const dx = (points3D[ip][0] - points3D[im][0]) / (ip - im);
-  const dy = (points3D[ip][1] - points3D[im][1]) / (ip - im);
-  const dz = (points3D[ip][2] - points3D[im][2]) / (ip - im);
-  const tLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const tangent3D: [number, number, number] = tLen > 0.001
-    ? [dx / tLen, dy / tLen, dz / tLen]
-    : [1, 0, 0];
 
-  return { points3D, pointsXZ, tangent3D };
+  let tangent3D: [number, number, number];
+  let tangentMagnitude: number;
+  let tangentChart: [number, number] | null = null;
+
+  if (chart && e1Raw && e2Raw) {
+    // GR-style: compute tangent components in chart coordinates dxᵘ/dt
+    const [u_p, v_p] = chart.forward(pointsXZ[ip][0], pointsXZ[ip][1]);
+    const [u_m, v_m] = chart.forward(pointsXZ[im][0], pointsXZ[im][1]);
+    const dudt = (u_p - u_m) / ((ip - im) * dt);
+    const dvdt = (v_p - v_m) / ((ip - im) * dt);
+    tangentChart = [dudt, dvdt];
+
+    // Reconstruct 3D tangent via pushforward: γ'= (du/dt)·∂φ⁻¹/∂u + (dv/dt)·∂φ⁻¹/∂v
+    const tx = dudt * e1Raw[0] + dvdt * e2Raw[0];
+    const ty = dudt * e1Raw[1] + dvdt * e2Raw[1];
+    const tz = dudt * e1Raw[2] + dvdt * e2Raw[2];
+    tangentMagnitude = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    tangent3D = tangentMagnitude > 0.001
+      ? [tx / tangentMagnitude, ty / tangentMagnitude, tz / tangentMagnitude]
+      : [1, 0, 0];
+  } else {
+    // Fallback: embedding-coordinate finite difference (per parameter unit)
+    const dx = (points3D[ip][0] - points3D[im][0]) / ((ip - im) * dt);
+    const dy = (points3D[ip][1] - points3D[im][1]) / ((ip - im) * dt);
+    const dz = (points3D[ip][2] - points3D[im][2]) / ((ip - im) * dt);
+    tangentMagnitude = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    tangent3D = tangentMagnitude > 0.001
+      ? [dx / tangentMagnitude, dy / tangentMagnitude, dz / tangentMagnitude]
+      : [1, 0, 0];
+  }
+
+  return { points3D, pointsXZ, tangent3D, tangentMagnitude, tangentChart };
 }

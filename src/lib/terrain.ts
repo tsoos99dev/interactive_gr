@@ -64,6 +64,12 @@ export function generateTerrainGeometry(
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
   geometry.setAttribute("aWorldPos", new THREE.BufferAttribute(worldPositions, 2));
+
+  // Placeholder attributes required by the TSL terrain shader (populated later)
+  geometry.setAttribute("aScalar", new THREE.BufferAttribute(new Float32Array(vertexCount), 1));
+  geometry.setAttribute("aChartCoord", new THREE.BufferAttribute(new Float32Array(vertexCount * 2), 2));
+  geometry.setAttribute("aChartInDomain", new THREE.BufferAttribute(new Float32Array(vertexCount), 1));
+
   geometry.computeVertexNormals();
 
   return geometry;

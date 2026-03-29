@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { Html, Line } from "@react-three/drei";
+import { Html } from "@react-three/drei";
 import { useAppState, useAppDispatch } from "@/stores/app-store";
 import { generateCurve } from "@/lib/curves";
 
@@ -76,11 +76,9 @@ function TangentPlaneGrid({
     // Lines along e1 direction (varying e2)
     for (let i = 0; i <= GRID_DIVISIONS; i++) {
       const t = -half + i * step;
-      // Start point: origin + t*e2 - half*e1
       const sx = t * e2.x - half * e1.x;
       const sy = t * e2.y - half * e1.y;
       const sz = t * e2.z - half * e1.z;
-      // End point: origin + t*e2 + half*e1
       const ex = t * e2.x + half * e1.x;
       const ey = t * e2.y + half * e1.y;
       const ez = t * e2.z + half * e1.z;
@@ -109,7 +107,6 @@ function TangentPlaneGrid({
 
   const planeGeo = useMemo(() => {
     const half = PLANE_SIZE / 2;
-    // Quad corners: origin ± half*e1 ± half*e2
     const c00 = [-half * e1.x - half * e2.x, -half * e1.y - half * e2.y, -half * e1.z - half * e2.z];
     const c10 = [ half * e1.x - half * e2.x,  half * e1.y - half * e2.y,  half * e1.z - half * e2.z];
     const c01 = [-half * e1.x + half * e2.x, -half * e1.y + half * e2.y, -half * e1.z + half * e2.z];
@@ -153,6 +150,44 @@ function TangentPlaneGrid({
   );
 }
 
+/** Vertex-colored line strip (replaces drei Line for WebGPU compat) */
+function CurveLine({
+  points,
+  colors,
+  renderOrder,
+}: {
+  points: [number, number, number][];
+  colors: THREE.Color[];
+  renderOrder: number;
+}) {
+  const lineObj = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(points.length * 3);
+    const colorArr = new Float32Array(points.length * 3);
+    for (let i = 0; i < points.length; i++) {
+      positions[i * 3] = points[i][0];
+      positions[i * 3 + 1] = points[i][1];
+      positions[i * 3 + 2] = points[i][2];
+      colorArr[i * 3] = colors[i].r;
+      colorArr[i * 3 + 1] = colors[i].g;
+      colorArr[i * 3 + 2] = colors[i].b;
+    }
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colorArr, 3));
+
+    const mat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const obj = new THREE.Line(geo, mat);
+    obj.renderOrder = renderOrder;
+    return obj;
+  }, [points, colors, renderOrder]);
+
+  return <primitive object={lineObj} />;
+}
+
 export function TangentSpace() {
   const state = useAppState();
   const dispatch = useAppDispatch();
@@ -174,11 +209,18 @@ export function TangentSpace() {
   const e1 = new THREE.Vector3(...point.e1);
   const e2 = new THREE.Vector3(...point.e2);
 
-  // Curve through selected point
+  // Curve through selected point — tangent computed in chart coords when available
   const curve = useMemo(() => {
     if (!state.showCurve) return null;
-    return generateCurve(point.position[0], point.position[2]);
-  }, [point.position, state.showCurve]);
+    const chart = state.currentChart ?? undefined;
+    return generateCurve(
+      point.position[0],
+      point.position[2],
+      chart ? { forward: chart.forward } : undefined,
+      point.e1Raw,
+      point.e2Raw,
+    );
+  }, [point.position, point.e1Raw, point.e2Raw, state.showCurve, state.currentChart]);
   const curvePoints = curve?.points3D ?? null;
 
   // Fade factor: 0 at endpoints, 1 at center
@@ -197,22 +239,48 @@ export function TangentSpace() {
     return curvePoints.map((_, i) => dark.clone().lerp(bg, 1 - fadeFn(i, n)));
   }, [curvePoints]);
 
-  // Nonlinear parameterization ticks: t = sinh(s) style spacing
+  // Adaptive parameterization ticks: multiple resolution layers so existing
+  // ticks stay put and finer ones appear between them as λ changes.
   const curveTicks = useMemo(() => {
     if (!curvePoints) return null;
     const n = curvePoints.length;
     const mid = Math.floor(n / 2);
     const ticks: { pos: [number, number, number]; label: string; fade: number }[] = [];
-    const params = [-2.0, -1.0, -0.5, 0, 0.5, 1.0, 2.0];
-    const maxArc = Math.floor(mid * 0.6); // ticks use 60% of curve, rest is fade tail
-    for (const t of params) {
-      const idx = mid + Math.round((Math.sinh(t) / Math.sinh(2)) * maxArc);
-      if (idx < 0 || idx >= n) continue;
-      const p = curvePoints[idx];
-      ticks.push({ pos: p, label: `${t.toFixed(1)}`, fade: fadeFn(idx, n) });
+    const maxArc = Math.floor(mid * 0.6);
+    const lambda = state.paramScale;
+    const sMax = lambda * 2;
+
+    // Hierarchical layers: each step is a subdivision of the previous.
+    // We include all layers whose step produces at least ~3 ticks per side
+    // that fit on the visible curve.
+    const layers = [10, 5, 2, 1, 0.5];
+    const seen = new Set<number>();
+
+    for (const step of layers) {
+      if (sMax / step < 1.5) continue;
+      if (sMax / step > 8) continue;
+
+      for (let k = 0; k * step <= sMax * 1.05; k++) {
+        for (const s of k === 0 ? [0] : [k * step, -k * step]) {
+          // Quantise to avoid float drift
+          const key = Math.round(s * 10000);
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const t = s / lambda;
+          const idx = mid + Math.round((Math.sinh(t) / Math.sinh(2)) * maxArc);
+          if (idx < 0 || idx >= n) continue;
+          const p = curvePoints[idx];
+
+          // Format with just enough decimals for the step size
+          const decimals = step < 0.05 ? 3 : step < 0.5 ? 2 : step < 1 ? 1 : 0;
+          const label = s.toFixed(decimals).replace(/\.?0+$/, "") || "0";
+          ticks.push({ pos: p, label, fade: fadeFn(idx, n) });
+        }
+      }
     }
     return ticks;
-  }, [curvePoints]);
+  }, [curvePoints, state.paramScale]);
 
   // Selected tangent vector: v = a·e₁ + b·e₂
   const tv = state.tangentVector;
@@ -303,11 +371,9 @@ export function TangentSpace() {
       {/* Curve through the selected point */}
       {state.showCurve && curvePoints && curveColors && (
         <>
-          <Line
+          <CurveLine
             points={curvePoints}
-            vertexColors={curveColors}
-            lineWidth={2}
-            depthTest={false}
+            colors={curveColors}
             renderOrder={3}
           />
           {/* Parameter tick marks */}
@@ -332,29 +398,34 @@ export function TangentSpace() {
               </Html>
             </group>
           ))}
-          {/* Tangent to curve γ'(0) */}
-          {curve?.tangent3D && (
-            <>
-              <Arrow
-                origin={origin}
-                direction={new THREE.Vector3(...curve.tangent3D)}
-                color="#000000"
-                length={ARROW_LENGTH}
-              />
-              <Html
-                position={[
-                  origin.x + curve.tangent3D[0] * (ARROW_LENGTH + 0.15),
-                  origin.y + curve.tangent3D[1] * (ARROW_LENGTH + 0.15),
-                  origin.z + curve.tangent3D[2] * (ARROW_LENGTH + 0.15),
-                ]}
-                style={{ pointerEvents: "none" }}
-              >
-                <span style={{ color: "#000", fontSize: 12, fontWeight: 700, fontFamily: "monospace", whiteSpace: "nowrap", textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
-                  γ′(0)
-                </span>
-              </Html>
-            </>
-          )}
+          {/* Tangent to curve γ'(0) — length reflects parameterization */}
+          {curve?.tangent3D && (() => {
+            const scaledLen = curve.tangentMagnitude * state.paramScale;
+            const arrowLen = Math.max(scaledLen, 0.05);
+            const tipOffset = arrowLen + 0.15;
+            return (
+              <>
+                <Arrow
+                  origin={origin}
+                  direction={new THREE.Vector3(...curve.tangent3D)}
+                  color="#000000"
+                  length={arrowLen}
+                />
+                <Html
+                  position={[
+                    origin.x + curve.tangent3D[0] * tipOffset,
+                    origin.y + curve.tangent3D[1] * tipOffset,
+                    origin.z + curve.tangent3D[2] * tipOffset,
+                  ]}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <span style={{ color: "#000", fontSize: 12, fontWeight: 700, fontFamily: "monospace", whiteSpace: "nowrap", textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                    γ′(0)
+                  </span>
+                </Html>
+              </>
+            );
+          })()}
         </>
       )}
     </group>
