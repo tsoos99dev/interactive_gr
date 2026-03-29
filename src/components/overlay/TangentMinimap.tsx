@@ -246,12 +246,10 @@ export function TangentMinimap() {
     }
 
     // Draw vector field at point (dark green) — project 3D vector into (f1, f2) frame
-    let fieldVec2d: [number, number] | null = null;
     if (fieldData && fieldData.mag > 0.01) {
       const [dx, dy, dz] = fieldData.dir3D;
       const fx = fieldData.mag * (dx * f1[0] + dy * f1[1] + dz * f1[2]);
       const fy = fieldData.mag * (dx * f2[0] + dy * f2[1] + dz * f2[2]);
-      fieldVec2d = [fx, fy];
       drawArrow(ctx, cx, cy, toSx(fx), toSy(fy), "#117733", 2);
       ctx.fillStyle = "#117733";
       ctx.font = "bold 11px monospace";
