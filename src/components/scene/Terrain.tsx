@@ -81,9 +81,9 @@ export function Terrain() {
     }
   }, [geometry, state.currentChart]);
 
-  // Compute scalar attribute
+  // Compute scalar attribute (needed for both scalar overlay and contour lines)
   useMemo(() => {
-    if (!state.showScalarOverlay) return;
+    if (!state.showScalarOverlay && !state.showContours) return;
     const fn = scalarFunctions[state.activeScalarFn];
     if (!fn) return;
 
@@ -99,7 +99,7 @@ export function Terrain() {
     }
 
     geometry.setAttribute("aScalar", new THREE.BufferAttribute(scalars, 1));
-  }, [geometry, state.activeScalarFn, state.showScalarOverlay]);
+  }, [geometry, state.activeScalarFn, state.showScalarOverlay, state.showContours]);
 
   useFrame((r3fState) => {
     const cam = r3fState.camera;
@@ -161,7 +161,7 @@ export function Terrain() {
         }
 
         // Recompute scalar attribute for new geometry
-        if (state.showScalarOverlay) {
+        if (state.showScalarOverlay || state.showContours) {
           const fn = scalarFunctions[state.activeScalarFn];
           if (fn) {
             const posAttr = newGeo.getAttribute("position");
