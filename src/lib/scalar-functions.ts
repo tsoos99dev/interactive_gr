@@ -8,6 +8,14 @@ export interface ScalarFunction {
   max: number;
 }
 
+/**
+ * Scale factor applied to gradients so they're visually comparable to the
+ * unit-length noise field.  The scalar functions vary slowly (frequencies
+ * ~0.05–0.15), giving raw gradient magnitudes around 0.1.  Multiplying by
+ * GRAD_SCALE brings them up to O(1).
+ */
+const GRAD_SCALE = 8;
+
 export const scalarFunctions: Record<string, ScalarFunction> = {
   temperature: {
     name: "temperature",
@@ -17,11 +25,13 @@ export const scalarFunctions: Record<string, ScalarFunction> = {
       Math.sin(0.08 * x + 0.3) * Math.cos(0.11 * z - 0.5) +
       0.5 * Math.sin(0.05 * x - 0.06 * z),
     gradient: (x, _y, z) => [
-      0.08 * Math.cos(0.08 * x + 0.3) * Math.cos(0.11 * z - 0.5) +
-        0.5 * 0.05 * Math.cos(0.05 * x - 0.06 * z),
+      GRAD_SCALE *
+        (0.08 * Math.cos(0.08 * x + 0.3) * Math.cos(0.11 * z - 0.5) +
+          0.5 * 0.05 * Math.cos(0.05 * x - 0.06 * z)),
       0,
-      Math.sin(0.08 * x + 0.3) * -0.11 * Math.sin(0.11 * z - 0.5) +
-        0.5 * -0.06 * Math.cos(0.05 * x - 0.06 * z),
+      GRAD_SCALE *
+        (Math.sin(0.08 * x + 0.3) * -0.11 * Math.sin(0.11 * z - 0.5) +
+          0.5 * -0.06 * Math.cos(0.05 * x - 0.06 * z)),
     ],
     min: -1.5,
     max: 1.5,
@@ -42,7 +52,7 @@ export const scalarFunctions: Record<string, ScalarFunction> = {
       const d =
         -Math.sin(r * 3.0 + 1.0) * 3.0 * Math.exp(-r * 0.3) +
         Math.cos(r * 3.0 + 1.0) * -0.3 * Math.exp(-r * 0.3);
-      return [d * drdx, 0, d * drdz];
+      return [GRAD_SCALE * d * drdx, 0, GRAD_SCALE * d * drdz];
     },
     min: -1,
     max: 1,
@@ -54,11 +64,13 @@ export const scalarFunctions: Record<string, ScalarFunction> = {
     compute: (x, _y, z) =>
       Math.sin(0.15 * x + 0.1 * z) + 0.4 * Math.cos(0.2 * z - 0.08 * x + 2),
     gradient: (x, _y, z) => [
-      0.15 * Math.cos(0.15 * x + 0.1 * z) +
-        0.4 * 0.08 * Math.sin(0.2 * z - 0.08 * x + 2),
+      GRAD_SCALE *
+        (0.15 * Math.cos(0.15 * x + 0.1 * z) +
+          0.4 * 0.08 * Math.sin(0.2 * z - 0.08 * x + 2)),
       0,
-      0.1 * Math.cos(0.15 * x + 0.1 * z) +
-        0.4 * -0.2 * Math.sin(0.2 * z - 0.08 * x + 2),
+      GRAD_SCALE *
+        (0.1 * Math.cos(0.15 * x + 0.1 * z) +
+          0.4 * -0.2 * Math.sin(0.2 * z - 0.08 * x + 2)),
     ],
     min: -1.4,
     max: 1.4,

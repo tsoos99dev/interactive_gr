@@ -15,10 +15,12 @@ export interface SelectedPoint {
 }
 
 export type ScalarFnName =
-  | "none"
   | "temperature"
   | "pressure"
   | "density";
+
+export type VectorFieldSource = "noise" | "gradient";
+export type FieldId = "noise" | "grad-temperature" | "grad-pressure" | "grad-density";
 
 export interface AppState {
   cameraPosition: [number, number, number];
@@ -35,13 +37,19 @@ export interface AppState {
   showCurve: boolean;
   /** Reparameterization scale: t → paramScale·t, so γ'(0) scales by this factor */
   paramScale: number;
+  showVectorField: boolean;
+  vectorFieldSource: VectorFieldSource;
+  showMetricTensor: boolean;
+  showLieBracket: boolean;
+  lieBracketFieldX: FieldId;
+  lieBracketFieldY: FieldId;
 }
 
 export const initialState: AppState = {
   cameraPosition: [0, 5, 0],
   cameraDirection: [0, 0, -1],
   selectedPoint: null,
-  activeScalarFn: "none",
+  activeScalarFn: "temperature",
   showWireframe: false,
   showContours: false,
   showScalarOverlay: false,
@@ -50,6 +58,12 @@ export const initialState: AppState = {
   tangentVector: null,
   showCurve: false,
   paramScale: 1.0,
+  showVectorField: false,
+  vectorFieldSource: "noise",
+  showMetricTensor: false,
+  showLieBracket: false,
+  lieBracketFieldX: "noise",
+  lieBracketFieldY: "grad-temperature",
 };
 
 export type AppAction =
@@ -63,7 +77,13 @@ export type AppAction =
   | { type: "TOGGLE_TANGENT_MODE" }
   | { type: "SET_TANGENT_VECTOR"; v: [number, number] | null }
   | { type: "TOGGLE_CURVE" }
-  | { type: "SET_PARAM_SCALE"; scale: number };
+  | { type: "SET_PARAM_SCALE"; scale: number }
+  | { type: "TOGGLE_VECTOR_FIELD" }
+  | { type: "SET_VECTOR_FIELD_SOURCE"; source: VectorFieldSource }
+  | { type: "TOGGLE_METRIC_TENSOR" }
+  | { type: "TOGGLE_LIE_BRACKET" }
+  | { type: "SET_LIE_BRACKET_FIELD_X"; field: FieldId }
+  | { type: "SET_LIE_BRACKET_FIELD_Y"; field: FieldId };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -92,7 +112,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         activeScalarFn: action.fn,
-        showScalarOverlay: action.fn !== "none",
       };
     case "TOGGLE_WIREFRAME":
       return { ...state, showWireframe: !state.showWireframe };
@@ -106,6 +125,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, showCurve: !state.showCurve };
     case "SET_PARAM_SCALE":
       return { ...state, paramScale: action.scale };
+    case "TOGGLE_VECTOR_FIELD":
+      return { ...state, showVectorField: !state.showVectorField };
+    case "SET_VECTOR_FIELD_SOURCE":
+      return { ...state, vectorFieldSource: action.source };
+    case "TOGGLE_METRIC_TENSOR":
+      return { ...state, showMetricTensor: !state.showMetricTensor };
+    case "TOGGLE_LIE_BRACKET":
+      return { ...state, showLieBracket: !state.showLieBracket };
+    case "SET_LIE_BRACKET_FIELD_X":
+      return { ...state, lieBracketFieldX: action.field };
+    case "SET_LIE_BRACKET_FIELD_Y":
+      return { ...state, lieBracketFieldY: action.field };
   }
 }
 

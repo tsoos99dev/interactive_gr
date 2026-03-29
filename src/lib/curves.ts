@@ -17,7 +17,7 @@ const fieldNoise2 = createNoise2D(() => 0.87);
 const FIELD_SCALE = 0.04;
 
 /** Smooth vector field on the (x,z) plane */
-function field(x: number, z: number): [number, number] {
+export function field(x: number, z: number): [number, number] {
   // Use two noise channels to get a smooth 2D direction
   const vx = fieldNoise(x * FIELD_SCALE, z * FIELD_SCALE);
   const vz = fieldNoise2(x * FIELD_SCALE, z * FIELD_SCALE);

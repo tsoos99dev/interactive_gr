@@ -1,6 +1,9 @@
 import { useRef, useEffect, useCallback, useMemo } from "react";
 import { useAppState, useAppDispatch } from "@/stores/app-store";
 import { generateCurve } from "@/lib/curves";
+import { evaluateVectorFieldAt } from "@/lib/vector-fields";
+import { metricEllipseParams } from "@/lib/metric";
+import { computeLieBracket } from "@/lib/lie-bracket";
 
 const SIZE = 220;
 const RANGE = 3; // coordinate range ±3 in tangent space
@@ -71,6 +74,58 @@ export function TangentMinimap() {
     return curve;
   }, [state.showCurve, point, state.currentChart]);
 
+  // Vector field at selected point
+  const fieldData = useMemo(() => {
+    if (!state.showVectorField || !state.currentChart || !point) return null;
+    return evaluateVectorFieldAt(
+      state.currentChart,
+      point.position[0],
+      point.position[2],
+      point.e1Raw,
+      point.e2Raw,
+      state.vectorFieldSource,
+      state.activeScalarFn,
+    );
+  }, [
+    state.showVectorField,
+    state.currentChart,
+    state.vectorFieldSource,
+    state.activeScalarFn,
+    point,
+  ]);
+
+  // Metric ellipse at selected point
+  const metricData = useMemo(() => {
+    if (!state.showMetricTensor || !state.currentChart || !point) return null;
+    return metricEllipseParams(
+      state.currentChart,
+      point.position[0],
+      point.position[2],
+      1.0,
+    );
+  }, [state.showMetricTensor, state.currentChart, point]);
+
+  // Lie bracket at selected point
+  const bracketData = useMemo(() => {
+    if (!state.showLieBracket || !point) return null;
+    const result = computeLieBracket(
+      state.lieBracketFieldX,
+      state.lieBracketFieldY,
+      point.position[0],
+      point.position[2],
+      2.0,
+      15,
+      state.currentChart ?? undefined,
+    );
+    return result.bracket3D;
+  }, [
+    state.showLieBracket,
+    state.lieBracketFieldX,
+    state.lieBracketFieldY,
+    state.currentChart,
+    point,
+  ]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !point) return;
@@ -129,6 +184,35 @@ export function TangentMinimap() {
       ctx.stroke();
     }
 
+    // Draw metric ellipse: g(v,v) = 1
+    if (metricData) {
+      const { a, b, angle } = metricData;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const ELLIPSE_PTS = 48;
+      ctx.beginPath();
+      for (let k = 0; k <= ELLIPSE_PTS; k++) {
+        const theta = (k / ELLIPSE_PTS) * Math.PI * 2;
+        // Axis-aligned ellipse in eigenbasis
+        const up = a * Math.cos(theta);
+        const vp = b * Math.sin(theta);
+        // Rotate back to chart coords
+        const du = up * cosA - vp * sinA;
+        const dv = up * sinA + vp * cosA;
+        // Map to 2D frame via basis vectors
+        const ex = du * e1_2d[0] + dv * e2_2d[0];
+        const ey = du * e1_2d[1] + dv * e2_2d[1];
+        if (k === 0) ctx.moveTo(toSx(ex), toSy(ey));
+        else ctx.lineTo(toSx(ex), toSy(ey));
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(140, 60, 140, 0.1)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(140, 60, 140, 0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
     // Draw e₁ basis arrow (red)
     drawArrow(ctx, cx, cy, toSx(e1_2d[0]), toSy(e1_2d[1]), "#ff4444", 2);
     // Draw e₂ basis arrow (blue)
@@ -161,6 +245,37 @@ export function TangentMinimap() {
       );
     }
 
+    // Draw vector field at point (dark green) — project 3D vector into (f1, f2) frame
+    let fieldVec2d: [number, number] | null = null;
+    if (fieldData && fieldData.mag > 0.01) {
+      const [dx, dy, dz] = fieldData.dir3D;
+      const fx = fieldData.mag * (dx * f1[0] + dy * f1[1] + dz * f1[2]);
+      const fy = fieldData.mag * (dx * f2[0] + dy * f2[1] + dz * f2[2]);
+      fieldVec2d = [fx, fy];
+      drawArrow(ctx, cx, cy, toSx(fx), toSy(fy), "#117733", 2);
+      ctx.fillStyle = "#117733";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("V", toSx(fx) + 4, toSy(fy) - 4);
+    }
+
+    // Draw Lie bracket [X, Y] (orange) — project 3D vector into (f1, f2) frame
+    if (bracketData) {
+      const [bx3, by3, bz3] = bracketData;
+      let bx = bx3 * f1[0] + by3 * f1[1] + bz3 * f1[2];
+      let by = bx3 * f2[0] + by3 * f2[1] + bz3 * f2[2];
+      // Scale to match 3D view (bracketLen * 4, capped at 3)
+      const bLen = Math.sqrt(bx * bx + by * by);
+      if (bLen > 1e-4) {
+        const scaledLen = Math.min(bLen * 4, 3);
+        bx = (bx / bLen) * scaledLen;
+        by = (by / bLen) * scaledLen;
+      }
+      drawArrow(ctx, cx, cy, toSx(bx), toSy(by), "#ff8800", 2);
+      ctx.fillStyle = "#ff8800";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("[X,Y]", toSx(bx) + 4, toSy(by) - 4);
+    }
+
     // Draw selected tangent vector (green)
     if (state.tangentVector) {
       const [a, b] = state.tangentVector;
@@ -168,32 +283,48 @@ export function TangentMinimap() {
       const vy = a * e1_2d[1] + b * e2_2d[1];
       drawArrow(ctx, cx, cy, toSx(vx), toSy(vy), "#22aa44", 2.5);
 
-      ctx.fillStyle = "rgba(34, 170, 68, 0.8)";
-      ctx.font = "10px monospace";
-      ctx.fillText(
-        `v = ${a.toFixed(1)}·∂/∂u + ${b.toFixed(1)}·∂/∂v`,
-        6,
-        SIZE - 18,
-      );
+      // ctx.fillStyle = "rgba(34, 170, 68, 0.8)";
+      // ctx.font = "10px monospace";
+      // ctx.fillText(
+      //   `v = ${a.toFixed(1)}·∂/∂u + ${b.toFixed(1)}·∂/∂v`,
+      //   6,
+      //   SIZE - 18,
+      // );
     }
 
-    // γ'(0) decomposition at bottom left
-    if (state.showCurve && curveTangent2d) {
-      const det2 = e1_2d[0] * e2_2d[1] - e1_2d[1] * e2_2d[0];
-      if (Math.abs(det2) > 1e-6) {
-        const ca =
-          (curveTangent2d[0] * e2_2d[1] - curveTangent2d[1] * e2_2d[0]) / det2;
-        const cb =
-          (curveTangent2d[1] * e1_2d[0] - curveTangent2d[0] * e1_2d[1]) / det2;
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        ctx.font = "10px monospace";
-        ctx.fillText(
-          `γ′ = ${ca.toFixed(1)}·∂/∂u + ${cb.toFixed(1)}·∂/∂v`,
-          6,
-          SIZE - 6,
-        );
-      }
-    }
+    // Decomposition labels at bottom left — stack from bottom up
+    // let bottomY = SIZE - 6;
+
+    // γ'(0) decomposition
+    // if (state.showCurve && curveTangent2d) {
+    //   const det2 = e1_2d[0] * e2_2d[1] - e1_2d[1] * e2_2d[0];
+    //   if (Math.abs(det2) > 1e-6) {
+    //     const ca =
+    //       (curveTangent2d[0] * e2_2d[1] - curveTangent2d[1] * e2_2d[0]) / det2;
+    //     const cb =
+    //       (curveTangent2d[1] * e1_2d[0] - curveTangent2d[0] * e1_2d[1]) / det2;
+    //     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    //     ctx.font = "10px monospace";
+    //     ctx.fillText(
+    //       `γ′ = ${ca.toFixed(1)}·∂/∂u + ${cb.toFixed(1)}·∂/∂v`,
+    //       6,
+    //       bottomY,
+    //     );
+    //     bottomY += 12;
+    //   }
+    // }
+
+    // V decomposition
+    // if (fieldData && fieldData.mag > 0.01) {
+    //   const [Vu, Vv] = fieldData.chartComponents;
+    //   ctx.fillStyle = "rgba(17, 119, 51, 0.8)";
+    //   ctx.font = "10px monospace";
+    //   ctx.fillText(
+    //     `V = ${Vu.toFixed(1)}·∂/∂u + ${Vv.toFixed(1)}·∂/∂v`,
+    //     6,
+    //     bottomY,
+    //   );
+    // }
 
     // Origin dot
     ctx.fillStyle = "#ffcc00";
@@ -210,7 +341,17 @@ export function TangentMinimap() {
     ctx.fillStyle = "rgba(60, 70, 90, 0.8)";
     ctx.font = "bold 11px monospace";
     ctx.fillText("TₚM", 6, 14);
-  }, [point, state.tangentVector, state.showCurve, state.paramScale, curveData, getFrame]);
+  }, [
+    point,
+    state.tangentVector,
+    state.showCurve,
+    state.paramScale,
+    curveData,
+    fieldData,
+    metricData,
+    bracketData,
+    getFrame,
+  ]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {

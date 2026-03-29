@@ -57,7 +57,7 @@ export function createTerrainMaterial(atlas: Chart[]) {
   material.toneMapped = false;
 
   /* ---- uniforms ---- */
-  const uFogRadius = uniform(35.0);
+  const uFogRadius = uniform(45.0);
   const uFogFalloff = uniform(12.0);
   const uBaseColor = uniform(new THREE.Color(0.92, 0.92, 0.92));
   const uFogColor = uniform(new THREE.Color(0xf0f0f0));

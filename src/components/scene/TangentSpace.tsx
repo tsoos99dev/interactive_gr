@@ -3,61 +3,12 @@ import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { useAppState, useAppDispatch } from "@/stores/app-store";
 import { generateCurve } from "@/lib/curves";
+import { evaluateVectorFieldAt } from "@/lib/vector-fields";
+import { Arrow, CurveLine } from "./primitives";
 
 const PLANE_SIZE = 6;
 const GRID_DIVISIONS = 6;
 const ARROW_LENGTH = 1.0;
-const ARROW_HEAD_LENGTH = 0.2;
-const ARROW_HEAD_WIDTH = 0.08;
-
-function Arrow({
-  origin,
-  direction,
-  color,
-  length = ARROW_LENGTH,
-}: {
-  origin: THREE.Vector3;
-  direction: THREE.Vector3;
-  color: string;
-  length?: number;
-}) {
-  const shaftGeo = useMemo(() => {
-    const geo = new THREE.CylinderGeometry(
-      ARROW_HEAD_WIDTH * 0.4,
-      ARROW_HEAD_WIDTH * 0.4,
-      length - ARROW_HEAD_LENGTH,
-      8
-    );
-    geo.translate(0, (length - ARROW_HEAD_LENGTH) / 2, 0);
-    return geo;
-  }, [length]);
-
-  const headGeo = useMemo(() => {
-    const geo = new THREE.ConeGeometry(ARROW_HEAD_WIDTH, ARROW_HEAD_LENGTH, 8);
-    geo.translate(0, length - ARROW_HEAD_LENGTH / 2, 0);
-    return geo;
-  }, [length]);
-
-  const quaternion = useMemo(() => {
-    const q = new THREE.Quaternion();
-    q.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      direction.clone().normalize()
-    );
-    return q;
-  }, [direction]);
-
-  return (
-    <group position={origin} quaternion={quaternion}>
-      <mesh geometry={shaftGeo}>
-        <meshBasicMaterial color={color} />
-      </mesh>
-      <mesh geometry={headGeo}>
-        <meshBasicMaterial color={color} />
-      </mesh>
-    </group>
-  );
-}
 
 function TangentPlaneGrid({
   origin,
@@ -148,44 +99,6 @@ function TangentPlaneGrid({
       </lineSegments>
     </group>
   );
-}
-
-/** Vertex-colored line strip (replaces drei Line for WebGPU compat) */
-function CurveLine({
-  points,
-  colors,
-  renderOrder,
-}: {
-  points: [number, number, number][];
-  colors: THREE.Color[];
-  renderOrder: number;
-}) {
-  const lineObj = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(points.length * 3);
-    const colorArr = new Float32Array(points.length * 3);
-    for (let i = 0; i < points.length; i++) {
-      positions[i * 3] = points[i][0];
-      positions[i * 3 + 1] = points[i][1];
-      positions[i * 3 + 2] = points[i][2];
-      colorArr[i * 3] = colors[i].r;
-      colorArr[i * 3 + 1] = colors[i].g;
-      colorArr[i * 3 + 2] = colors[i].b;
-    }
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(colorArr, 3));
-
-    const mat = new THREE.LineBasicMaterial({
-      vertexColors: true,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const obj = new THREE.Line(geo, mat);
-    obj.renderOrder = renderOrder;
-    return obj;
-  }, [points, colors, renderOrder]);
-
-  return <primitive object={lineObj} />;
 }
 
 export function TangentSpace() {
@@ -295,6 +208,28 @@ export function TangentSpace() {
     return dir;
   }, [tv, e1, e2]);
 
+  // Vector field value at selected point
+  const fieldAtPoint = useMemo(() => {
+    if (!state.showVectorField || !state.currentChart) return null;
+    return evaluateVectorFieldAt(
+      state.currentChart,
+      point.position[0],
+      point.position[2],
+      point.e1Raw,
+      point.e2Raw,
+      state.vectorFieldSource,
+      state.activeScalarFn,
+    );
+  }, [
+    state.showVectorField,
+    state.currentChart,
+    state.vectorFieldSource,
+    state.activeScalarFn,
+    point.position,
+    point.e1Raw,
+    point.e2Raw,
+  ]);
+
   return (
     <group>
       {/* Tangent plane with grid */}
@@ -353,6 +288,35 @@ export function TangentSpace() {
           </Html>
         </>
       )}
+
+      {/* Vector field at point (dark green) */}
+      {fieldAtPoint && fieldAtPoint.mag > 0.01 && (() => {
+        const fDir = new THREE.Vector3(...fieldAtPoint.dir3D);
+        const fLen = Math.min(fieldAtPoint.mag, 3);
+        const tipOffset = fLen + 0.15;
+        return (
+          <>
+            <Arrow
+              origin={origin}
+              direction={fDir}
+              color="#117733"
+              length={fLen}
+            />
+            <Html
+              position={[
+                origin.x + fieldAtPoint.dir3D[0] * tipOffset,
+                origin.y + fieldAtPoint.dir3D[1] * tipOffset,
+                origin.z + fieldAtPoint.dir3D[2] * tipOffset,
+              ]}
+              style={{ pointerEvents: "none" }}
+            >
+              <span style={{ color: "#117733", fontSize: 12, fontWeight: 700, fontFamily: "monospace", whiteSpace: "nowrap", textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                V
+              </span>
+            </Html>
+          </>
+        );
+      })()}
 
       {/* Point marker */}
       <mesh position={origin}>

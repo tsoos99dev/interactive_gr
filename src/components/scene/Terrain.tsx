@@ -83,7 +83,7 @@ export function Terrain() {
 
   // Compute scalar attribute
   useMemo(() => {
-    if (state.activeScalarFn === "none" || !state.showScalarOverlay) return;
+    if (!state.showScalarOverlay) return;
     const fn = scalarFunctions[state.activeScalarFn];
     if (!fn) return;
 
@@ -106,7 +106,7 @@ export function Terrain() {
 
     // Update TSL uniforms (camera position is automatic via cameraPosition node)
     uniforms.showScalar.value =
-      state.showScalarOverlay && state.activeScalarFn !== "none" ? 1.0 : 0.0;
+      state.showScalarOverlay ? 1.0 : 0.0;
     uniforms.showContours.value = state.showContours ? 1.0 : 0.0;
     uniforms.showWireframe.value = state.showWireframe ? 1.0 : 0.0;
 
@@ -120,7 +120,7 @@ export function Terrain() {
       );
     }
 
-    if (state.activeScalarFn !== "none") {
+    {
       const fn = scalarFunctions[state.activeScalarFn];
       if (fn) {
         uniforms.scalarMin.value = fn.min;
@@ -161,7 +161,7 @@ export function Terrain() {
         }
 
         // Recompute scalar attribute for new geometry
-        if (state.showScalarOverlay && state.activeScalarFn !== "none") {
+        if (state.showScalarOverlay) {
           const fn = scalarFunctions[state.activeScalarFn];
           if (fn) {
             const posAttr = newGeo.getAttribute("position");
