@@ -7,6 +7,7 @@ import { TangentSpace } from "./TangentSpace";
 import { VectorFieldOverlay } from "./VectorFieldOverlay";
 import { MetricOverlay } from "./MetricOverlay";
 import { LieBracketOverlay } from "./LieBracketOverlay";
+import { Ch3Scene } from "./Ch3Scene";
 import { useAppState } from "@/stores/app-store";
 
 const createRenderer = (async (props: any) => {
@@ -19,6 +20,20 @@ const createRenderer = (async (props: any) => {
   return renderer;
 }) as any;
 
+function Chapter2Content() {
+  const state = useAppState();
+  return (
+    <>
+      <CameraRig />
+      <Terrain />
+      <TangentSpace />
+      {state.showVectorField && <VectorFieldOverlay />}
+      {state.showMetricTensor && <MetricOverlay />}
+      {state.showLieBracket && <LieBracketOverlay />}
+    </>
+  );
+}
+
 function SceneContent() {
   const state = useAppState();
   return (
@@ -26,12 +41,8 @@ function SceneContent() {
       <color attach="background" args={["#f8f8f8"]} />
       <ambientLight intensity={0.4} />
       <directionalLight position={[50, 80, 50]} intensity={0.8} />
-      <CameraRig />
-      <Terrain />
-      <TangentSpace />
-      {state.showVectorField && <VectorFieldOverlay />}
-      {state.showMetricTensor && <MetricOverlay />}
-      {state.showLieBracket && <LieBracketOverlay />}
+      {state.activeScene === "chapter2" && <Chapter2Content />}
+      {state.activeScene === "chapter3" && <Ch3Scene />}
     </>
   );
 }
