@@ -142,7 +142,7 @@ export function CovariantDerivOverlay() {
             vec: THREE.Vector3;
             color: string;
             label: string;
-            labelJsx?: JSX.Element;
+            labelJsx?: React.ReactNode;
           }[] = [
             { vec: derivData.v, color: "#44aa44", label: "V" },
             {

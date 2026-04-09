@@ -7,7 +7,6 @@ import {
   varying,
   vec3,
   float,
-  normalView,
   normalize,
   dot,
   max,
@@ -19,7 +18,6 @@ import {
   min,
   mix,
   select,
-  pow,
   cameraPosition,
   positionWorld,
 } from "three/tsl";

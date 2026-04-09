@@ -5,7 +5,6 @@ import { spherePosition, sphereNormal, sphereMetric, sphereChristoffel } from ".
  * K = (e*g - f^2) / (E*G - F^2)
  * where E,F,G = first fundamental form (metric) and e,f,g = second fundamental form.
  */
-let curvatureCallCount = 0;
 export function gaussianCurvature(
   theta: number,
   phi: number,
