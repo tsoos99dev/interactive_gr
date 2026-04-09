@@ -69,8 +69,8 @@ const EPS = 0.001;
 
 // ── Noise cache ──
 // Cache the noise values on a grid so all derived quantities are cheap.
-const NOISE_GRID_THETA = 200;
-const NOISE_GRID_PHI = 400;
+const NOISE_GRID_THETA = 400;
+const NOISE_GRID_PHI = 800;
 let noiseGridEpsilon: number | null = null;
 let noiseGrid: Float64Array | null = null;
 
@@ -94,6 +94,25 @@ function ensureNoiseCache(epsilon: number) {
   console.timeEnd("noiseCache");
 }
 
+/** Catmull-Rom cubic: gives C¹ interpolation so finite-difference
+ *  Christoffel symbols stay smooth across grid cell boundaries. */
+function cubicInterp(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  return p1 + 0.5 * t * (
+    p2 - p0 + t * (
+      2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (
+        -p0 + 3 * p1 - 3 * p2 + p3
+      )
+    )
+  );
+}
+
+function gridSample(ti: number, pi: number): number {
+  // Clamp theta index, wrap phi index
+  const tc = Math.max(0, Math.min(NOISE_GRID_THETA - 1, ti));
+  const pc = ((pi % NOISE_GRID_PHI) + NOISE_GRID_PHI) % NOISE_GRID_PHI;
+  return noiseGrid![tc * NOISE_GRID_PHI + pc];
+}
+
 function cachedNoise(theta: number, phi: number, epsilon: number): number {
   if (epsilon === 0) return 0;
   ensureNoiseCache(epsilon);
@@ -102,21 +121,28 @@ function cachedNoise(theta: number, phi: number, epsilon: number): number {
   const ti = (theta / Math.PI) * NOISE_GRID_THETA - 0.5;
   const pi = ((phi % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI) * NOISE_GRID_PHI;
 
-  const ti0 = Math.max(0, Math.min(NOISE_GRID_THETA - 2, Math.floor(ti)));
-  const ti1 = ti0 + 1;
-  const ft = Math.max(0, Math.min(1, ti - ti0));
+  const ti1 = Math.floor(ti);
+  const pi1 = Math.floor(pi);
+  const ft = ti - ti1;
+  const fp = pi - pi1;
 
-  const pi0 = ((Math.floor(pi) % NOISE_GRID_PHI) + NOISE_GRID_PHI) % NOISE_GRID_PHI;
-  const pi1 = (pi0 + 1) % NOISE_GRID_PHI;
-  const fp = pi - Math.floor(pi);
+  // Bicubic: interpolate 4 rows in phi, then interpolate those 4 results in theta
+  let col0 = 0, col1 = 0, col2 = 0, col3 = 0;
+  for (let di = -1; di <= 2; di++) {
+    const row = cubicInterp(
+      gridSample(ti1 + di, pi1 - 1),
+      gridSample(ti1 + di, pi1),
+      gridSample(ti1 + di, pi1 + 1),
+      gridSample(ti1 + di, pi1 + 2),
+      fp,
+    );
+    if (di === -1) col0 = row;
+    else if (di === 0) col1 = row;
+    else if (di === 1) col2 = row;
+    else col3 = row;
+  }
 
-  const v00 = noiseGrid[ti0 * NOISE_GRID_PHI + pi0];
-  const v01 = noiseGrid[ti0 * NOISE_GRID_PHI + pi1];
-  const v10 = noiseGrid[ti1 * NOISE_GRID_PHI + pi0];
-  const v11 = noiseGrid[ti1 * NOISE_GRID_PHI + pi1];
-
-  return v00 * (1 - ft) * (1 - fp) + v01 * (1 - ft) * fp +
-         v10 * ft * (1 - fp) + v11 * ft * fp;
+  return cubicInterp(col0, col1, col2, col3, ft);
 }
 
 /** Force the noise cache to be built (call from SphereMesh on epsilon change) */

@@ -45,7 +45,15 @@ export function NormalCoordsOverlay() {
     function shoot(xi1: number, xi2: number): [number, number, number] {
       const vt = xi1 / lenTheta + xi2 * g12Factor;
       const vp = xi2 / lenPhiPerp;
-      const geo = integrateGeodesic(theta, phi, vt, vp, epsilon, STEPS_PER_GEO, dt);
+      const geo = integrateGeodesic(
+        theta,
+        phi,
+        vt,
+        vp,
+        epsilon,
+        STEPS_PER_GEO,
+        dt,
+      );
       return geo.points3D[geo.points3D.length - 1];
     }
 

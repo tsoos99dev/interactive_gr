@@ -31,7 +31,12 @@ export function integrateGeodesic(
   velocities.push([vt, vp]);
 
   for (let i = 0; i < steps; i++) {
-    const deriv = (t: number, p: number, dvt: number, dvp: number): [number, number, number, number] => {
+    const deriv = (
+      t: number,
+      p: number,
+      dvt: number,
+      dvp: number,
+    ): [number, number, number, number] => {
       const [at, ap] = christoffelAccel(t, p, dvt, dvp, epsilon);
       return [dvt, dvp, at, ap];
     };
@@ -61,15 +66,27 @@ export function integrateGeodesic(
     const newVt = vt + (dt / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
     const newVp = vp + (dt / 6) * (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]);
 
-    if (!isFinite(newTheta) || !isFinite(newPhi) || !isFinite(newVt) || !isFinite(newVp)) break;
+    if (
+      !isFinite(newTheta) ||
+      !isFinite(newPhi) ||
+      !isFinite(newVt) ||
+      !isFinite(newVp)
+    )
+      break;
 
     theta = newTheta;
     phi = newPhi;
     vt = newVt;
     vp = newVp;
 
-    if (theta < 0.01) { theta = 0.01; vt = Math.abs(vt); }
-    if (theta > Math.PI - 0.01) { theta = Math.PI - 0.01; vt = -Math.abs(vt); }
+    if (theta < 0.01) {
+      theta = 0.01;
+      vt = Math.abs(vt);
+    }
+    if (theta > Math.PI - 0.01) {
+      theta = Math.PI - 0.01;
+      vt = -Math.abs(vt);
+    }
 
     phi = ((phi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
 
@@ -99,25 +116,43 @@ export function geodesicSpray(
   phi0: number,
   epsilon: number,
   nDirs: number,
-  steps: number = 200,
-  dt: number = 0.018,
+  radius: number = 3.5,
+  steps: number = 350,
 ): { geodesic: GeodesicResult; hue: number }[] {
   const [g11, g12, g22] = sphereMetric(theta0, phi0, epsilon);
+
+  // Build the same Gram-Schmidt orthonormal frame as NormalCoordsOverlay
+  const lenTheta = Math.sqrt(g11);
+  const cosAngle = g12 / (lenTheta * Math.sqrt(g22));
+  const lenPhiPerp = Math.sqrt(g22 * (1 - cosAngle * cosAngle));
+  const g12Factor = -g12 / (g11 * lenPhiPerp);
+
+  // Match NormalCoordsOverlay parameterization: encode distance in velocity,
+  // integrate over t ∈ [0, 1] so endpoints land at geodesic distance = radius.
+  const dt = 1.0 / steps;
 
   const results: { geodesic: GeodesicResult; hue: number }[] = [];
 
   console.time("firstGeodesic");
   for (let i = 0; i < nDirs; i++) {
-    if (i === 1) { console.timeEnd("firstGeodesic"); }
+    if (i === 1) {
+      console.timeEnd("firstGeodesic");
+    }
     const angle = (2 * Math.PI * i) / nDirs;
-    const rawA = Math.cos(angle);
-    const rawB = Math.sin(angle);
-    const norm2 = g11 * rawA * rawA + 2 * g12 * rawA * rawB + g22 * rawB * rawB;
-    const norm = Math.sqrt(norm2);
-    const vt = rawA / norm;
-    const vp = rawB / norm;
+    const xi1 = Math.cos(angle) * radius;
+    const xi2 = Math.sin(angle) * radius;
+    const vt = xi1 / lenTheta + xi2 * g12Factor;
+    const vp = xi2 / lenPhiPerp;
 
-    const geodesic = integrateGeodesic(theta0, phi0, vt, vp, epsilon, steps, dt);
+    const geodesic = integrateGeodesic(
+      theta0,
+      phi0,
+      vt,
+      vp,
+      epsilon,
+      steps,
+      dt,
+    );
     results.push({ geodesic, hue: i / nDirs });
   }
 
